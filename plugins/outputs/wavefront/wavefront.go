@@ -4,6 +4,7 @@ package wavefront
 import (
 	_ "embed"
 	"fmt"
+	httpconfig "github.com/influxdata/telegraf/plugins/common/http"
 	"net/url"
 	"regexp"
 	"strings"
@@ -36,6 +37,8 @@ type Wavefront struct {
 	ImmediateFlush       bool                            `toml:"immediate_flush"`
 	SourceOverride       []string                        `toml:"source_override"`
 	StringToNumber       map[string][]map[string]float64 `toml:"string_to_number" deprecated:"1.9.0;use the enum processor instead"`
+
+	httpconfig.HTTPClientConfig
 
 	sender wavefront.Sender
 	Log    telegraf.Logger `toml:"-"`
@@ -102,10 +105,21 @@ func (w *Wavefront) Connect() error {
 		connectionURL = senderURLFromHostAndPort(w.Host, w.Port)
 	}
 
-	sender, err := wavefront.NewSender(connectionURL,
-		wavefront.BatchSize(w.HTTPMaximumBatchSize),
-		wavefront.FlushIntervalSeconds(flushSeconds),
-	)
+	tlsConfig, err := w.HTTPClientConfig.TLSConfig()
+
+	var sender wavefront.Sender
+	if tlsConfig != nil {
+		sender, err = wavefront.NewSender(connectionURL,
+			wavefront.BatchSize(w.HTTPMaximumBatchSize),
+			wavefront.FlushIntervalSeconds(flushSeconds),
+			wavefront.TLSConfigOptions(tlsConfig),
+		)
+	} else {
+		sender, err = wavefront.NewSender(connectionURL,
+			wavefront.BatchSize(w.HTTPMaximumBatchSize),
+			wavefront.FlushIntervalSeconds(flushSeconds),
+		)
+	}
 
 	if err != nil {
 		return fmt.Errorf("could not create Wavefront Sender for the provided url")
